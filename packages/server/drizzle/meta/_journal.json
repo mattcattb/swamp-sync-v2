@@ -8,6 +8,13 @@
       "when": 1779221665626,
       "tag": "0000_free_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779226593681,
+      "tag": "0001_swamp_domain",
+      "breakpoints": true
     }
   ]
 }

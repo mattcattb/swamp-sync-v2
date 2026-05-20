@@ -52,9 +52,9 @@ function SignupPage() {
               Sign in
             </Link>
           </div>
-          <CardTitle className="text-center text-2xl">Create Account</CardTitle>
+          <CardTitle className="text-center text-2xl text-primary">Create Account</CardTitle>
           <p className="text-center text-sm text-muted-foreground">
-            Create an account to start a new project.
+            Create an account to sync schedules and find meeting times.
           </p>
         </CardHeader>
         <CardContent>
@@ -102,7 +102,6 @@ function SignupPage() {
               type="submit"
               disabled={loading}
               className="w-full"
-              effect="glow"
             >
               {loading ? "Creating account..." : "Sign Up"}
             </Button>

@@ -50,9 +50,9 @@ function LoginPage() {
               Create account
             </Link>
           </div>
-          <CardTitle className="text-center text-2xl">Sign In</CardTitle>
+          <CardTitle className="text-center text-2xl text-primary">Sign In</CardTitle>
           <p className="text-center text-sm text-muted-foreground">
-            Welcome back. Sign in to your workspace.
+            Welcome back to Swamp Sync.
           </p>
         </CardHeader>
         <CardContent>
@@ -88,7 +88,6 @@ function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full"
-              effect="glow"
             >
               {loading ? "Signing in..." : "Sign In"}
             </Button>

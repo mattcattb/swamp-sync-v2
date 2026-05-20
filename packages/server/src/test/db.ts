@@ -1,8 +1,20 @@
 import {db} from "../db";
-import {account, project, session, user, verification} from "../db/schema";
+import {
+  account,
+  event,
+  meeting,
+  meetingInvite,
+  meetingMember,
+  session,
+  user,
+  verification,
+} from "../db/schema";
 
 export const resetTestDb = async () => {
-  await db.delete(project);
+  await db.delete(meetingInvite);
+  await db.delete(meetingMember);
+  await db.delete(event);
+  await db.delete(meeting);
   await db.delete(account);
   await db.delete(session);
   await db.delete(verification);

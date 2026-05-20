@@ -1,4 +1,15 @@
-import {boolean, pgTable, text, timestamp, uuid} from "drizzle-orm/pg-core";
+import {
+  boolean,
+  date,
+  integer,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 // Better Auth tables
 export const user = pgTable("user", {
@@ -51,13 +62,88 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Example app table - replace with your own domain models
-export const project = pgTable("project", {
+export const meetingRole = pgEnum("meeting_role", ["organizer", "member"]);
+
+export const meetingInviteStatus = pgEnum("meeting_invite_status", [
+  "pending",
+  "accepted",
+  "declined",
+]);
+
+export const event = pgTable("event", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerId: text("owner_id")
     .notNull()
-    .references(() => user.id),
-  name: text("name").notNull(),
+    .references(() => user.id, {onDelete: "cascade"}),
+  title: text("title").notNull(),
+  description: text("description"),
+  startAt: timestamp("start_at").notNull(),
+  endAt: timestamp("end_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export const meeting = pgTable(
+  "meeting",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizerId: text("organizer_id")
+      .notNull()
+      .references(() => user.id, {onDelete: "cascade"}),
+    name: text("name").notNull(),
+    description: text("description"),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    selectedWeekdays: integer("selected_weekdays").array().notNull(),
+    dailyStartMinutes: integer("daily_start_minutes").notNull(),
+    dailyEndMinutes: integer("daily_end_minutes").notNull(),
+    durationMinutes: integer("duration_minutes").notNull(),
+    joinCode: text("join_code").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    joinCodeUnique: uniqueIndex("meeting_join_code_unique").on(table.joinCode),
+  }),
+);
+
+export const meetingMember = pgTable(
+  "meeting_member",
+  {
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meeting.id, {onDelete: "cascade"}),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, {onDelete: "cascade"}),
+    role: meetingRole("role").notNull().default("member"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({columns: [table.meetingId, table.userId]}),
+  }),
+);
+
+export const meetingInvite = pgTable(
+  "meeting_invite",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meeting.id, {onDelete: "cascade"}),
+    invitedUserId: text("invited_user_id")
+      .notNull()
+      .references(() => user.id, {onDelete: "cascade"}),
+    invitedByUserId: text("invited_by_user_id")
+      .notNull()
+      .references(() => user.id, {onDelete: "cascade"}),
+    status: meetingInviteStatus("status").notNull().default("pending"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    meetingInvitedUserUnique: uniqueIndex(
+      "meeting_invite_meeting_user_unique",
+    ).on(table.meetingId, table.invitedUserId),
+  }),
+);

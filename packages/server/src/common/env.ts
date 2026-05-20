@@ -1,10 +1,22 @@
 import {z} from "zod";
 
 const DEFAULT_REDIS_URL = "redis://localhost:6379";
+const DEFAULT_DATABASE_URL =
+  "postgresql://postgres:postgres@localhost:5432/swamp_sync_v2";
+const DEFAULT_BETTER_AUTH_SECRET = "dev-secret-change-me-32-characters";
+const DEFAULT_BETTER_AUTH_URL = "http://localhost:5173";
+
+const optionalStringWithDefault = (defaultValue: string) =>
+  z.preprocess((value) => {
+    if (typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
+    return defaultValue;
+  }, z.string());
 
 const betterAuthSchema = z.object({
-  BETTER_AUTH_SECRET: z.string(),
-  BETTER_AUTH_URL: z.string(),
+  BETTER_AUTH_SECRET: optionalStringWithDefault(DEFAULT_BETTER_AUTH_SECRET),
+  BETTER_AUTH_URL: optionalStringWithDefault(DEFAULT_BETTER_AUTH_URL),
 });
 
 const googleEnvSchema = z.object({
@@ -22,7 +34,7 @@ const appEnvSchema = z.object({
   ...betterAuthSchema.shape,
   ...googleEnvSchema.shape,
   ...githubEnvSchema.shape,
-  DATABASE_URL: z.string(),
+  DATABASE_URL: optionalStringWithDefault(DEFAULT_DATABASE_URL),
   REDIS_URL: z.preprocess((value) => {
     if (typeof value === "string" && value.trim() !== "") {
       return value;
