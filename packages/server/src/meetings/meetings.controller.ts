@@ -6,6 +6,7 @@ import {
   createMeetingSchema,
   declineInvite,
   getMeeting,
+  getMeetingAvailability,
   getMeetingSuggestions,
   inviteByEmailSchema,
   inviteParamsSchema,
@@ -22,7 +23,10 @@ export const meetingsController = createRouter()
     return c.json(meetings);
   })
   .post("/", zValidator("json", createMeetingSchema), async (c) => {
-    const created = await createMeeting(c.get("userId"), c.req.valid("json"));
+    const userId = c.get("userId");
+    const json = c.req.valid("json");
+
+    const created = await createMeeting(userId, json);
     return c.json(created, 201);
   })
   .post(
@@ -66,6 +70,15 @@ export const meetingsController = createRouter()
       const {id, inviteId} = c.req.valid("param");
       const meeting = await declineInvite(id, inviteId, c.get("userId"));
       return c.json(meeting);
+    },
+  )
+  .get(
+    "/:id/availability",
+    zValidator("param", meetingParamsSchema),
+    async (c) => {
+      const {id} = c.req.valid("param");
+      const availability = await getMeetingAvailability(id, c.get("userId"));
+      return c.json(availability);
     },
   )
   .get(

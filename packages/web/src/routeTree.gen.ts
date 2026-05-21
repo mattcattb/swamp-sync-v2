@@ -10,13 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as ScheduleRouteImport } from './routes/schedule'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MeetingsNewRouteImport } from './routes/meetings.new'
+import { Route as MeetingsMeetingIdRouteImport } from './routes/meetings.$meetingId'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScheduleRoute = ScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -34,39 +42,83 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MeetingsNewRoute = MeetingsNewRouteImport.update({
+  id: '/meetings/new',
+  path: '/meetings/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeetingsMeetingIdRoute = MeetingsMeetingIdRouteImport.update({
+  id: '/meetings/$meetingId',
+  path: '/meetings/$meetingId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/schedule': typeof ScheduleRoute
   '/signup': typeof SignupRoute
+  '/meetings/$meetingId': typeof MeetingsMeetingIdRoute
+  '/meetings/new': typeof MeetingsNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/schedule': typeof ScheduleRoute
   '/signup': typeof SignupRoute
+  '/meetings/$meetingId': typeof MeetingsMeetingIdRoute
+  '/meetings/new': typeof MeetingsNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/schedule': typeof ScheduleRoute
   '/signup': typeof SignupRoute
+  '/meetings/$meetingId': typeof MeetingsMeetingIdRoute
+  '/meetings/new': typeof MeetingsNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/login' | '/signup'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/schedule'
+    | '/signup'
+    | '/meetings/$meetingId'
+    | '/meetings/new'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/login' | '/signup'
-  id: '__root__' | '/' | '/dashboard' | '/login' | '/signup'
+  to:
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/schedule'
+    | '/signup'
+    | '/meetings/$meetingId'
+    | '/meetings/new'
+  id:
+    | '__root__'
+    | '/'
+    | '/dashboard'
+    | '/login'
+    | '/schedule'
+    | '/signup'
+    | '/meetings/$meetingId'
+    | '/meetings/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  ScheduleRoute: typeof ScheduleRoute
   SignupRoute: typeof SignupRoute
+  MeetingsMeetingIdRoute: typeof MeetingsMeetingIdRoute
+  MeetingsNewRoute: typeof MeetingsNewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -76,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schedule': {
+      id: '/schedule'
+      path: '/schedule'
+      fullPath: '/schedule'
+      preLoaderRoute: typeof ScheduleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -99,6 +158,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/meetings/new': {
+      id: '/meetings/new'
+      path: '/meetings/new'
+      fullPath: '/meetings/new'
+      preLoaderRoute: typeof MeetingsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/meetings/$meetingId': {
+      id: '/meetings/$meetingId'
+      path: '/meetings/$meetingId'
+      fullPath: '/meetings/$meetingId'
+      preLoaderRoute: typeof MeetingsMeetingIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -106,7 +179,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  ScheduleRoute: ScheduleRoute,
   SignupRoute: SignupRoute,
+  MeetingsMeetingIdRoute: MeetingsMeetingIdRoute,
+  MeetingsNewRoute: MeetingsNewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

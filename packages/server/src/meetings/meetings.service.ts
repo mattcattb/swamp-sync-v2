@@ -453,3 +453,116 @@ export const getMeetingSuggestions = async (
     busyEvents,
   );
 };
+
+const MINUTES_IN_DAY = 24 * 60;
+const availabilityStepMinutes = 30;
+
+const parseDateOnly = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    throw new BadRequestException("Invalid meeting date");
+  }
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const addDays = (date: Date, days: number) =>
+  new Date(date.getTime() + days * MINUTES_IN_DAY * 60_000);
+
+const addMinutes = (date: Date, minutes: number) =>
+  new Date(date.getTime() + minutes * 60_000);
+
+const overlaps = (
+  left: {startAt: Date; endAt: Date},
+  right: {startAt: Date; endAt: Date},
+) => left.startAt < right.endAt && left.endAt > right.startAt;
+
+export const getMeetingAvailability = async (
+  meetingId: string,
+  userId: string,
+) => {
+  await assertCanReadMeeting(meetingId, userId);
+
+  const detail = await buildMeetingDetail(meetingId);
+  const members = detail.members.map((member) => ({
+    userId: member.userId,
+    name: member.name,
+    email: member.email,
+    role: member.role,
+  }));
+  const memberIds = members.map((member) => member.userId);
+
+  if (memberIds.length === 0) {
+    return {
+      stepMinutes: availabilityStepMinutes,
+      members,
+      days: [],
+    };
+  }
+
+  const busyEvents = await db
+    .select({
+      ownerId: event.ownerId,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+    })
+    .from(event)
+    .where(inArray(event.ownerId, memberIds));
+
+  const selectedWeekdays = new Set(detail.selectedWeekdays);
+  const startDate = parseDateOnly(detail.startDate);
+  const endDate = parseDateOnly(detail.endDate);
+  const days = [];
+
+  for (let day = startDate; day <= endDate; day = addDays(day, 1)) {
+    if (!selectedWeekdays.has(day.getUTCDay())) {
+      continue;
+    }
+
+    const slots = [];
+
+    for (
+      let minute = detail.dailyStartMinutes;
+      minute < detail.dailyEndMinutes;
+      minute += availabilityStepMinutes
+    ) {
+      const slotStart = addMinutes(day, minute);
+      const slotEnd = addMinutes(
+        day,
+        Math.min(minute + availabilityStepMinutes, detail.dailyEndMinutes),
+      );
+
+      const busyMembers = members.filter((member) =>
+        busyEvents.some(
+          (busy) =>
+            busy.ownerId === member.userId &&
+            overlaps({startAt: slotStart, endAt: slotEnd}, busy),
+        ),
+      );
+      const busyMemberIds = new Set(busyMembers.map((member) => member.userId));
+      const availableMembers = members.filter(
+        (member) => !busyMemberIds.has(member.userId),
+      );
+
+      slots.push({
+        startAt: slotStart.toISOString(),
+        endAt: slotEnd.toISOString(),
+        availableCount: availableMembers.length,
+        totalCount: members.length,
+        availableMembers,
+        busyMembers,
+      });
+    }
+
+    days.push({
+      date: day.toISOString().slice(0, 10),
+      slots,
+    });
+  }
+
+  return {
+    stepMinutes: availabilityStepMinutes,
+    members,
+    days,
+  };
+};

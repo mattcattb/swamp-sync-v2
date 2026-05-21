@@ -7,7 +7,8 @@
     "dev": "vite --port 5173",
     "build": "vite build && tsc --noEmit",
     "preview": "vite preview",
-    "start": "vite"
+    "start": "vite",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.8",

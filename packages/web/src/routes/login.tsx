@@ -31,13 +31,14 @@ function LoginPage() {
       setError(result.error.message ?? "Login failed");
       setLoading(false);
     } else {
-      navigate({ to: "/" });
+      navigate({to: "/dashboard", replace: true});
     }
   };
 
   return (
-    <div className="mx-auto mt-16 w-full max-w-md px-4">
-      <Card>
+    <div className="mx-auto mt-10 w-full max-w-md px-4">
+      <Card className="border-primary/15">
+        <div className="-m-5 mb-5 h-2 rounded-t-lg bg-accent" />
         <CardHeader>
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <Link to="/" className="transition hover:text-foreground">
@@ -50,7 +51,7 @@ function LoginPage() {
               Create account
             </Link>
           </div>
-          <CardTitle className="text-center text-2xl text-primary">Sign In</CardTitle>
+          <CardTitle className="text-center text-3xl font-extrabold text-primary">Sign In</CardTitle>
           <p className="text-center text-sm text-muted-foreground">
             Welcome back to Swamp Sync.
           </p>
@@ -88,6 +89,7 @@ function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full"
+              effect="sheen"
             >
               {loading ? "Signing in..." : "Sign In"}
             </Button>

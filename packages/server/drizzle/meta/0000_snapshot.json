@@ -1,5 +1,5 @@
 {
-  "id": "04a91a8c-d566-42b7-ad8a-6228ffa7e4af",
+  "id": "a7efe34e-1ebb-4290-96e5-d49fb84ea748",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -111,8 +111,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.project": {
-      "name": "project",
+    "public.event": {
+      "name": "event",
       "schema": "",
       "columns": {
         "id": {
@@ -128,9 +128,27 @@
           "primaryKey": false,
           "notNull": true
         },
-        "name": {
-          "name": "name",
+        "title": {
+          "name": "title",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "start_at": {
+          "name": "start_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_at": {
+          "name": "end_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true
         },
@@ -151,9 +169,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "project_owner_id_user_id_fk": {
-          "name": "project_owner_id_user_id_fk",
-          "tableFrom": "project",
+        "event_owner_id_user_id_fk": {
+          "name": "event_owner_id_user_id_fk",
+          "tableFrom": "event",
           "tableTo": "user",
           "columnsFrom": [
             "owner_id"
@@ -161,11 +179,332 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.meeting": {
+      "name": "meeting",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organizer_id": {
+          "name": "organizer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "start_date": {
+          "name": "start_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_date": {
+          "name": "end_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selected_weekdays": {
+          "name": "selected_weekdays",
+          "type": "integer[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "daily_start_minutes": {
+          "name": "daily_start_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "daily_end_minutes": {
+          "name": "daily_end_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration_minutes": {
+          "name": "duration_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "join_code": {
+          "name": "join_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "meeting_join_code_unique": {
+          "name": "meeting_join_code_unique",
+          "columns": [
+            {
+              "expression": "join_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "meeting_organizer_id_user_id_fk": {
+          "name": "meeting_organizer_id_user_id_fk",
+          "tableFrom": "meeting",
+          "tableTo": "user",
+          "columnsFrom": [
+            "organizer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.meeting_invite": {
+      "name": "meeting_invite",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "meeting_id": {
+          "name": "meeting_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invited_user_id": {
+          "name": "invited_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invited_by_user_id": {
+          "name": "invited_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "meeting_invite_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "meeting_invite_meeting_user_unique": {
+          "name": "meeting_invite_meeting_user_unique",
+          "columns": [
+            {
+              "expression": "meeting_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "invited_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "meeting_invite_meeting_id_meeting_id_fk": {
+          "name": "meeting_invite_meeting_id_meeting_id_fk",
+          "tableFrom": "meeting_invite",
+          "tableTo": "meeting",
+          "columnsFrom": [
+            "meeting_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "meeting_invite_invited_user_id_user_id_fk": {
+          "name": "meeting_invite_invited_user_id_user_id_fk",
+          "tableFrom": "meeting_invite",
+          "tableTo": "user",
+          "columnsFrom": [
+            "invited_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "meeting_invite_invited_by_user_id_user_id_fk": {
+          "name": "meeting_invite_invited_by_user_id_user_id_fk",
+          "tableFrom": "meeting_invite",
+          "tableTo": "user",
+          "columnsFrom": [
+            "invited_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.meeting_member": {
+      "name": "meeting_member",
+      "schema": "",
+      "columns": {
+        "meeting_id": {
+          "name": "meeting_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "meeting_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'member'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "meeting_member_meeting_id_meeting_id_fk": {
+          "name": "meeting_member_meeting_id_meeting_id_fk",
+          "tableFrom": "meeting_member",
+          "tableTo": "meeting",
+          "columnsFrom": [
+            "meeting_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "meeting_member_user_id_user_id_fk": {
+          "name": "meeting_member_user_id_user_id_fk",
+          "tableFrom": "meeting_member",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "meeting_member_meeting_id_user_id_pk": {
+          "name": "meeting_member_meeting_id_user_id_pk",
+          "columns": [
+            "meeting_id",
+            "user_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -374,7 +713,25 @@
       "isRLSEnabled": false
     }
   },
-  "enums": {},
+  "enums": {
+    "public.meeting_invite_status": {
+      "name": "meeting_invite_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "accepted",
+        "declined"
+      ]
+    },
+    "public.meeting_role": {
+      "name": "meeting_role",
+      "schema": "public",
+      "values": [
+        "organizer",
+        "member"
+      ]
+    }
+  },
   "schemas": {},
   "sequences": {},
   "roles": {},

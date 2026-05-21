@@ -33,13 +33,14 @@ function SignupPage() {
       setError(result.error.message ?? "Signup failed");
       setLoading(false);
     } else {
-      navigate({ to: "/" });
+      navigate({to: "/dashboard", replace: true});
     }
   };
 
   return (
-    <div className="mx-auto mt-16 w-full max-w-md px-4">
-      <Card>
+    <div className="mx-auto mt-10 w-full max-w-md px-4">
+      <Card className="border-primary/15">
+        <div className="-m-5 mb-5 h-2 rounded-t-lg bg-accent" />
         <CardHeader>
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <Link to="/" className="transition hover:text-foreground">
@@ -52,7 +53,7 @@ function SignupPage() {
               Sign in
             </Link>
           </div>
-          <CardTitle className="text-center text-2xl text-primary">Create Account</CardTitle>
+          <CardTitle className="text-center text-3xl font-extrabold text-primary">Create Account</CardTitle>
           <p className="text-center text-sm text-muted-foreground">
             Create an account to sync schedules and find meeting times.
           </p>
@@ -102,6 +103,8 @@ function SignupPage() {
               type="submit"
               disabled={loading}
               className="w-full"
+              variant="secondary"
+              effect="sheen"
             >
               {loading ? "Creating account..." : "Sign Up"}
             </Button>

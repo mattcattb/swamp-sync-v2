@@ -4,7 +4,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/cn";
 
 export const buttonStyles = cva(
-  [    "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-all",
+  [
+    "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-all",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     "disabled:pointer-events-none disabled:opacity-60",
   ],
@@ -12,11 +13,11 @@ export const buttonStyles = cva(
     variants: {
       variant: {
         primary:
-          "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
+          "bg-primary text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 active:bg-primary/80",
         secondary:
-          "bg-accent text-white hover:bg-accent/90 active:bg-accent/80",
+          "bg-accent text-white shadow-sm shadow-accent/25 hover:bg-accent/90 active:bg-accent/80",
         outline:
-          "border border-primary text-primary hover:bg-primary/10",
+          "border border-primary/30 bg-white text-primary hover:border-primary hover:bg-primary/10",
         ghost: "text-foreground hover:bg-muted/60",
         danger:
           "bg-danger text-white hover:brightness-110 active:brightness-95",
@@ -57,11 +58,12 @@ export function Button({
   ...props
 }: ButtonProps) {
   const Comp = asChild ? Slot : "button";
+  const buttonProps = asChild ? props : {...props, type};
 
   return (
-    <Comp      type={type}
+    <Comp
       className={cn(buttonStyles({ variant, size, effect }), className)}
-      {...props}
+      {...buttonProps}
     />
   );
 }
