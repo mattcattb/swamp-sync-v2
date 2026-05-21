@@ -2,6 +2,7 @@ import {useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
 import {createFileRoute, Link, Navigate} from "@tanstack/react-router";
 import {parseResponse, type InferResponseType} from "hono/client";
 import {type FormEvent, useState} from "react";
+import {Badge} from "../components/ui/badge";
 import {Button} from "../components/ui/button";
 import {Card, CardContent} from "../components/ui/card";
 import {EmptyState} from "../components/ui/empty";
@@ -9,7 +10,7 @@ import {Input} from "../components/ui/input";
 import {Label} from "../components/ui/label";
 import {Progress} from "../components/ui/progress";
 import {Tabs} from "../components/ui/tabs";
-import {useSession} from "../lib/auth";
+import {linkSocial, useSession} from "../lib/auth";
 import {getRpcErrorMessage, rpcClient} from "../lib/rpc.client";
 
 export const Route = createFileRoute("/schedule")({
@@ -17,10 +18,13 @@ export const Route = createFileRoute("/schedule")({
 });
 
 const eventsApi = rpcClient.api.events;
+const calendarApi = rpcClient.api.calendar;
 
 type EventRow = InferResponseType<typeof eventsApi.$get>[number];
+type CalendarStatus = InferResponseType<typeof calendarApi.status.$get>;
 
 const eventsKey = ["events"] as const;
+const calendarStatusKey = ["calendar-status"] as const;
 
 const toDateTimeLocal = (value: string | Date) => {
   const date = new Date(value);
@@ -74,7 +78,20 @@ function SchedulePage() {
 
   const eventsQuery = useQuery({
     queryKey: eventsKey,
+    enabled: Boolean(session),
     queryFn: () => parseResponse(eventsApi.$get()),
+  });
+  const calendarStatusQuery = useQuery({
+    queryKey: calendarStatusKey,
+    enabled: Boolean(session),
+    queryFn: () => parseResponse(calendarApi.status.$get()),
+  });
+  const syncCalendarMutation = useMutation({
+    mutationFn: () => parseResponse(calendarApi.sync.$post()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({queryKey: calendarStatusKey});
+      queryClient.invalidateQueries({queryKey: ["meeting-availability"]});
+    },
   });
 
   if (!isPending && !session) {
@@ -84,15 +101,93 @@ function SchedulePage() {
   const events = Array.isArray(eventsQuery.data) ? eventsQuery.data : [];
 
   return (
-    <div>
+    <div className="space-y-4">
       {session ? (
-        <EventsPanel
-          events={events}
-          isLoading={eventsQuery.isLoading}
-          onChanged={() => queryClient.invalidateQueries({queryKey: eventsKey})}
-        />
+        <>
+          <CalendarIntegrationPanel
+            status={calendarStatusQuery.data}
+            isLoading={calendarStatusQuery.isLoading}
+            syncError={syncCalendarMutation.error}
+            isSyncing={syncCalendarMutation.isPending}
+            onSync={() => syncCalendarMutation.mutate()}
+          />
+          <EventsPanel
+            events={events}
+            isLoading={eventsQuery.isLoading}
+            onChanged={() => queryClient.invalidateQueries({queryKey: eventsKey})}
+          />
+        </>
       ) : null}
     </div>
+  );
+}
+
+function CalendarIntegrationPanel({
+  status,
+  isLoading,
+  syncError,
+  isSyncing,
+  onSync,
+}: {
+  status: CalendarStatus | undefined;
+  isLoading: boolean;
+  syncError: unknown;
+  isSyncing: boolean;
+  onSync: () => void;
+}) {
+  const connectGoogle = () => {
+    linkSocial({
+      provider: "google",
+      scopes: ["https://www.googleapis.com/auth/calendar.freebusy"],
+    });
+  };
+
+  return (
+    <Card className="border-primary/15">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-extrabold text-primary">
+              Calendar integration
+            </h2>
+            <Badge variant={status?.connected ? "success" : "warning"}>
+              {isLoading
+                ? "Checking"
+                : status?.connected
+                  ? status.status
+                  : "Disconnected"}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Google busy blocks stay separate from manual schedule blocks and are
+            used to filter meeting availability.
+          </p>
+          {status?.lastSyncedAt ? (
+            <p className="text-xs text-muted-foreground">
+              Last synced {formatDateTime(status.lastSyncedAt)}
+            </p>
+          ) : null}
+          {status?.syncError || syncError ? (
+            <p className="text-sm text-danger">
+              {status?.syncError ??
+                getRpcErrorMessage(syncError, "Calendar sync failed")}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={connectGoogle}>
+            {status?.connected ? "Reconnect Google" : "Connect Google"}
+          </Button>
+          <Button
+            type="button"
+            disabled={!status?.canSync || isSyncing}
+            onClick={onSync}
+          >
+            {isSyncing ? "Syncing" : "Sync busy blocks"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

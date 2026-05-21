@@ -64,10 +64,22 @@ export const verification = pgTable("verification", {
 
 export const meetingRole = pgEnum("meeting_role", ["organizer", "member"]);
 
+export const meetingParticipantKind = pgEnum("meeting_participant_kind", [
+  "registered",
+  "guest",
+]);
+
 export const meetingInviteStatus = pgEnum("meeting_invite_status", [
   "pending",
   "accepted",
   "declined",
+]);
+
+export const calendarConnectionStatus = pgEnum("calendar_connection_status", [
+  "connected",
+  "needs_auth",
+  "syncing",
+  "error",
 ]);
 
 export const event = pgTable("event", {
@@ -124,6 +136,52 @@ export const meetingMember = pgTable(
   }),
 );
 
+export const meetingParticipant = pgTable(
+  "meeting_participant",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meeting.id, {onDelete: "cascade"}),
+    userId: text("user_id").references(() => user.id, {onDelete: "cascade"}),
+    kind: meetingParticipantKind("kind").notNull(),
+    displayName: text("display_name").notNull(),
+    email: text("email"),
+    guestTokenHash: text("guest_token_hash"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    meetingUserUnique: uniqueIndex("meeting_participant_meeting_user_unique").on(
+      table.meetingId,
+      table.userId,
+    ),
+    guestTokenUnique: uniqueIndex("meeting_participant_guest_token_unique").on(
+      table.guestTokenHash,
+    ),
+  }),
+);
+
+export const meetingAvailabilitySlot = pgTable(
+  "meeting_availability_slot",
+  {
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meeting.id, {onDelete: "cascade"}),
+    participantId: uuid("participant_id")
+      .notNull()
+      .references(() => meetingParticipant.id, {onDelete: "cascade"}),
+    startAt: timestamp("start_at").notNull(),
+    endAt: timestamp("end_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.participantId, table.startAt, table.endAt],
+    }),
+  }),
+);
+
 export const meetingInvite = pgTable(
   "meeting_invite",
   {
@@ -145,5 +203,53 @@ export const meetingInvite = pgTable(
     meetingInvitedUserUnique: uniqueIndex(
       "meeting_invite_meeting_user_unique",
     ).on(table.meetingId, table.invitedUserId),
+  }),
+);
+
+export const calendarConnection = pgTable(
+  "calendar_connection",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, {onDelete: "cascade"}),
+    provider: text("provider").notNull(),
+    status: calendarConnectionStatus("status").notNull().default("needs_auth"),
+    lastSyncedAt: timestamp("last_synced_at"),
+    syncError: text("sync_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userProviderUnique: uniqueIndex("calendar_connection_user_provider_unique").on(
+      table.userId,
+      table.provider,
+    ),
+  }),
+);
+
+export const calendarBusyBlock = pgTable(
+  "calendar_busy_block",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, {onDelete: "cascade"}),
+    provider: text("provider").notNull(),
+    calendarId: text("calendar_id").notNull(),
+    externalEventId: text("external_event_id").notNull(),
+    title: text("title"),
+    startAt: timestamp("start_at").notNull(),
+    endAt: timestamp("end_at").notNull(),
+    fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    externalEventUnique: uniqueIndex("calendar_busy_block_external_unique").on(
+      table.userId,
+      table.provider,
+      table.calendarId,
+      table.externalEventId,
+      table.startAt,
+    ),
   }),
 );

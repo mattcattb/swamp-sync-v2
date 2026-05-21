@@ -8,6 +8,13 @@
       "when": 1779321877045,
       "tag": "0000_happy_korg",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779328450444,
+      "tag": "0001_stale_moonstone",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,9 @@ export const auth = betterAuth({
           google: {
             clientId: appEnv.GOOGLE_CLIENT_ID,
             clientSecret: appEnv.GOOGLE_CLIENT_SECRET,
+            scope: ["https://www.googleapis.com/auth/calendar.freebusy"],
+            accessType: "offline",
+            prompt: "select_account consent",
           },
         }
       : {}),

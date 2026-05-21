@@ -6,14 +6,9 @@ import {
   NotFoundException,
 } from "../common/errors";
 import {db} from "../db";
-import {
-  event,
-  meeting,
-  meetingInvite,
-  meetingMember,
-  user,
-} from "../db/schema";
+import {event, meeting, meetingInvite, meetingMember, user} from "../db/schema";
 import {findSuggestedMeetingTimes} from "./availability";
+import {getOrCreateRegisteredParticipant} from "./participants.service";
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -36,26 +31,27 @@ const validateMeetingWindow = <T extends z.infer<typeof meetingInputSchema>>(
   schema: z.ZodType<T>,
 ) =>
   schema
-  .refine((value) => value.startDate <= value.endDate, {
-    message: "Meeting start date must be before or equal to end date",
-    path: ["endDate"],
-  })
-  .refine((value) => value.dailyStartMinutes < value.dailyEndMinutes, {
-    message: "Daily start time must be before daily end time",
-    path: ["dailyEndMinutes"],
-  })
-  .refine(
-    (value) =>
-      value.durationMinutes <= value.dailyEndMinutes - value.dailyStartMinutes,
-    {
-      message: "Duration must fit inside the daily meeting window",
-      path: ["durationMinutes"],
-    },
-  );
+    .refine((value) => value.startDate <= value.endDate, {
+      message: "Meeting start date must be before or equal to end date",
+      path: ["endDate"],
+    })
+    .refine((value) => value.dailyStartMinutes < value.dailyEndMinutes, {
+      message: "Daily start time must be before daily end time",
+      path: ["dailyEndMinutes"],
+    })
+    .refine(
+      (value) =>
+        value.durationMinutes <=
+        value.dailyEndMinutes - value.dailyStartMinutes,
+      {
+        message: "Duration must fit inside the daily meeting window",
+        path: ["durationMinutes"],
+      },
+    );
 
 export const createMeetingSchema = validateMeetingWindow(
   meetingInputSchema.extend({
-  inviteEmails: z.array(z.string().email()).max(20).optional().default([]),
+    inviteEmails: z.array(z.string().email()).max(20).optional().default([]),
   }),
 );
 
@@ -87,26 +83,18 @@ const getUserByEmail = async (email: string) => {
   return found;
 };
 
-const assertOrganizer = async (meetingId: string, userId: string) => {
-  const [membership] = await db
-    .select()
-    .from(meetingMember)
-    .where(
-      and(
-        eq(meetingMember.meetingId, meetingId),
-        eq(meetingMember.userId, userId),
-        eq(meetingMember.role, "organizer"),
-      ),
-    );
+const getMeetingRow = async (meetingId: string, userId?: string) => {
+  if (!userId) {
+    const [foundMeeting] = await db
+      .select()
+      .from(meeting)
+      .where(eq(meeting.id, meetingId));
 
-  if (!membership) {
-    throw new ForbiddenException("Only organizers can perform this action");
+    return foundMeeting;
   }
-};
 
-const assertCanReadMeeting = async (meetingId: string, userId: string) => {
-  const [access] = await db
-    .select({meetingId: meeting.id})
+  const [row] = await db
+    .select({meeting})
     .from(meeting)
     .leftJoin(
       meetingMember,
@@ -134,44 +122,75 @@ const assertCanReadMeeting = async (meetingId: string, userId: string) => {
       ),
     );
 
-  if (!access) {
-    throw new NotFoundException("Meeting not found");
-  }
+  return row?.meeting;
 };
 
-const buildMeetingDetail = async (meetingId: string) => {
-  const [foundMeeting] = await db
-    .select()
+const getOrganizerMeetingRow = async (meetingId: string, userId: string) => {
+  const [row] = await db
+    .select({meeting})
     .from(meeting)
+    .innerJoin(
+      meetingMember,
+      and(
+        eq(meetingMember.meetingId, meeting.id),
+        eq(meetingMember.userId, userId),
+        eq(meetingMember.role, "organizer"),
+      ),
+    )
     .where(eq(meeting.id, meetingId));
+
+  return row?.meeting;
+};
+
+export const getMeetingWindow = async (meetingId: string, userId?: string) => {
+  const foundMeeting = await getMeetingRow(meetingId, userId);
+  if (!foundMeeting) {
+    throw new NotFoundException("Meeting not found");
+  }
+
+  return {
+    id: foundMeeting.id,
+    name: foundMeeting.name,
+    startDate: foundMeeting.startDate,
+    endDate: foundMeeting.endDate,
+    selectedWeekdays: foundMeeting.selectedWeekdays,
+    dailyStartMinutes: foundMeeting.dailyStartMinutes,
+    dailyEndMinutes: foundMeeting.dailyEndMinutes,
+    durationMinutes: foundMeeting.durationMinutes,
+  };
+};
+
+const buildMeetingDetail = async (meetingId: string, userId?: string) => {
+  const foundMeeting = await getMeetingRow(meetingId, userId);
 
   if (!foundMeeting) {
     throw new NotFoundException("Meeting not found");
   }
 
-  const members = await db
-    .select({
-      userId: meetingMember.userId,
-      role: meetingMember.role,
-      name: user.name,
-      email: user.email,
-    })
-    .from(meetingMember)
-    .innerJoin(user, eq(user.id, meetingMember.userId))
-    .where(eq(meetingMember.meetingId, meetingId));
-
-  const invites = await db
-    .select({
-      id: meetingInvite.id,
-      status: meetingInvite.status,
-      invitedUserId: meetingInvite.invitedUserId,
-      name: user.name,
-      email: user.email,
-      createdAt: meetingInvite.createdAt,
-    })
-    .from(meetingInvite)
-    .innerJoin(user, eq(user.id, meetingInvite.invitedUserId))
-    .where(eq(meetingInvite.meetingId, meetingId));
+  const [members, invites] = await Promise.all([
+    db
+      .select({
+        userId: meetingMember.userId,
+        role: meetingMember.role,
+        name: user.name,
+        email: user.email,
+      })
+      .from(meetingMember)
+      .innerJoin(user, eq(user.id, meetingMember.userId))
+      .where(eq(meetingMember.meetingId, meetingId)),
+    db
+      .select({
+        id: meetingInvite.id,
+        status: meetingInvite.status,
+        invitedUserId: meetingInvite.invitedUserId,
+        name: user.name,
+        email: user.email,
+        createdAt: meetingInvite.createdAt,
+      })
+      .from(meetingInvite)
+      .innerJoin(user, eq(user.id, meetingInvite.invitedUserId))
+      .where(eq(meetingInvite.meetingId, meetingId)),
+  ]);
 
   return {
     ...foundMeeting,
@@ -185,7 +204,10 @@ const createInvitesByEmail = async (
   invitedByUserId: string,
   inviteEmails: string[],
 ) => {
-  const uniqueEmails = [...new Set(inviteEmails.map((email) => email.toLowerCase()))];
+  const uniqueEmails = [
+    ...new Set(inviteEmails.map((email) => email.toLowerCase())),
+  ];
+
   for (const email of uniqueEmails) {
     const invitedUser = await getUserByEmail(email);
     if (!invitedUser) {
@@ -196,21 +218,7 @@ const createInvitesByEmail = async (
       continue;
     }
 
-    const [existingInvite] = await db
-      .select()
-      .from(meetingInvite)
-      .where(
-        and(
-          eq(meetingInvite.meetingId, meetingId),
-          eq(meetingInvite.invitedUserId, invitedUser.id),
-        ),
-      );
-
-    if (existingInvite) {
-      throw new BadRequestException("User is already invited to this meeting");
-    }
-
-    await db
+    const [created] = await db
       .insert(meetingInvite)
       .values({
         meetingId,
@@ -219,37 +227,43 @@ const createInvitesByEmail = async (
       })
       .onConflictDoNothing({
         target: [meetingInvite.meetingId, meetingInvite.invitedUserId],
-      });
+      })
+      .returning();
+
+    if (!created) {
+      throw new BadRequestException("User is already invited to this meeting");
+    }
   }
 };
 
 export const listMeetings = async (userId: string) => {
-  const memberships = await db
-    .select({
-      meeting,
-      role: meetingMember.role,
-    })
-    .from(meetingMember)
-    .innerJoin(meeting, eq(meeting.id, meetingMember.meetingId))
-    .where(eq(meetingMember.userId, userId))
-    .orderBy(desc(meeting.createdAt));
-
-  const pendingInvites = await db
-    .select({
-      inviteId: meetingInvite.id,
-      meeting,
-      invitedByUserId: meetingInvite.invitedByUserId,
-      createdAt: meetingInvite.createdAt,
-    })
-    .from(meetingInvite)
-    .innerJoin(meeting, eq(meeting.id, meetingInvite.meetingId))
-    .where(
-      and(
-        eq(meetingInvite.invitedUserId, userId),
-        eq(meetingInvite.status, "pending"),
-      ),
-    )
-    .orderBy(desc(meetingInvite.createdAt));
+  const [memberships, pendingInvites] = await Promise.all([
+    db
+      .select({
+        meeting,
+        role: meetingMember.role,
+      })
+      .from(meetingMember)
+      .innerJoin(meeting, eq(meeting.id, meetingMember.meetingId))
+      .where(eq(meetingMember.userId, userId))
+      .orderBy(desc(meeting.createdAt)),
+    db
+      .select({
+        inviteId: meetingInvite.id,
+        meeting,
+        invitedByUserId: meetingInvite.invitedByUserId,
+        createdAt: meetingInvite.createdAt,
+      })
+      .from(meetingInvite)
+      .innerJoin(meeting, eq(meeting.id, meetingInvite.meetingId))
+      .where(
+        and(
+          eq(meetingInvite.invitedUserId, userId),
+          eq(meetingInvite.status, "pending"),
+        ),
+      )
+      .orderBy(desc(meetingInvite.createdAt)),
+  ]);
 
   return {
     memberships,
@@ -294,6 +308,8 @@ export const createMeeting = async (
     });
   });
 
+  await getOrCreateRegisteredParticipant(createdMeetingId, organizerId);
+
   if (inviteEmails.length > 0) {
     await createInvitesByEmail(createdMeetingId, organizerId, inviteEmails);
   }
@@ -302,8 +318,7 @@ export const createMeeting = async (
 };
 
 export const getMeeting = async (meetingId: string, userId: string) => {
-  await assertCanReadMeeting(meetingId, userId);
-  return buildMeetingDetail(meetingId);
+  return buildMeetingDetail(meetingId, userId);
 };
 
 export const inviteRegisteredUser = async (
@@ -311,7 +326,11 @@ export const inviteRegisteredUser = async (
   organizerId: string,
   email: string,
 ) => {
-  await assertOrganizer(meetingId, organizerId);
+  const organizerMeeting = await getOrganizerMeetingRow(meetingId, organizerId);
+  if (!organizerMeeting) {
+    throw new ForbiddenException("Only organizers can perform this action");
+  }
+
   await createInvitesByEmail(meetingId, organizerId, [email]);
   return buildMeetingDetail(meetingId);
 };
@@ -350,6 +369,8 @@ export const acceptInvite = async (
         target: [meetingMember.meetingId, meetingMember.userId],
       });
   });
+
+  await getOrCreateRegisteredParticipant(meetingId, userId);
 
   return buildMeetingDetail(meetingId);
 };
@@ -417,6 +438,8 @@ export const joinMeetingByCode = async (joinCode: string, userId: string) => {
       );
   });
 
+  await getOrCreateRegisteredParticipant(meetingId, userId);
+
   return buildMeetingDetail(meetingId);
 };
 
@@ -424,9 +447,7 @@ export const getMeetingSuggestions = async (
   meetingId: string,
   userId: string,
 ) => {
-  await assertCanReadMeeting(meetingId, userId);
-
-  const detail = await buildMeetingDetail(meetingId);
+  const detail = await buildMeetingDetail(meetingId, userId);
   const memberIds = detail.members.map((member) => member.userId);
 
   if (memberIds.length === 0) {
@@ -452,117 +473,4 @@ export const getMeetingSuggestions = async (
     },
     busyEvents,
   );
-};
-
-const MINUTES_IN_DAY = 24 * 60;
-const availabilityStepMinutes = 30;
-
-const parseDateOnly = (value: string) => {
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) {
-    throw new BadRequestException("Invalid meeting date");
-  }
-  return new Date(Date.UTC(year, month - 1, day));
-};
-
-const addDays = (date: Date, days: number) =>
-  new Date(date.getTime() + days * MINUTES_IN_DAY * 60_000);
-
-const addMinutes = (date: Date, minutes: number) =>
-  new Date(date.getTime() + minutes * 60_000);
-
-const overlaps = (
-  left: {startAt: Date; endAt: Date},
-  right: {startAt: Date; endAt: Date},
-) => left.startAt < right.endAt && left.endAt > right.startAt;
-
-export const getMeetingAvailability = async (
-  meetingId: string,
-  userId: string,
-) => {
-  await assertCanReadMeeting(meetingId, userId);
-
-  const detail = await buildMeetingDetail(meetingId);
-  const members = detail.members.map((member) => ({
-    userId: member.userId,
-    name: member.name,
-    email: member.email,
-    role: member.role,
-  }));
-  const memberIds = members.map((member) => member.userId);
-
-  if (memberIds.length === 0) {
-    return {
-      stepMinutes: availabilityStepMinutes,
-      members,
-      days: [],
-    };
-  }
-
-  const busyEvents = await db
-    .select({
-      ownerId: event.ownerId,
-      title: event.title,
-      startAt: event.startAt,
-      endAt: event.endAt,
-    })
-    .from(event)
-    .where(inArray(event.ownerId, memberIds));
-
-  const selectedWeekdays = new Set(detail.selectedWeekdays);
-  const startDate = parseDateOnly(detail.startDate);
-  const endDate = parseDateOnly(detail.endDate);
-  const days = [];
-
-  for (let day = startDate; day <= endDate; day = addDays(day, 1)) {
-    if (!selectedWeekdays.has(day.getUTCDay())) {
-      continue;
-    }
-
-    const slots = [];
-
-    for (
-      let minute = detail.dailyStartMinutes;
-      minute < detail.dailyEndMinutes;
-      minute += availabilityStepMinutes
-    ) {
-      const slotStart = addMinutes(day, minute);
-      const slotEnd = addMinutes(
-        day,
-        Math.min(minute + availabilityStepMinutes, detail.dailyEndMinutes),
-      );
-
-      const busyMembers = members.filter((member) =>
-        busyEvents.some(
-          (busy) =>
-            busy.ownerId === member.userId &&
-            overlaps({startAt: slotStart, endAt: slotEnd}, busy),
-        ),
-      );
-      const busyMemberIds = new Set(busyMembers.map((member) => member.userId));
-      const availableMembers = members.filter(
-        (member) => !busyMemberIds.has(member.userId),
-      );
-
-      slots.push({
-        startAt: slotStart.toISOString(),
-        endAt: slotEnd.toISOString(),
-        availableCount: availableMembers.length,
-        totalCount: members.length,
-        availableMembers,
-        busyMembers,
-      });
-    }
-
-    days.push({
-      date: day.toISOString().slice(0, 10),
-      slots,
-    });
-  }
-
-  return {
-    stepMinutes: availabilityStepMinutes,
-    members,
-    days,
-  };
 };

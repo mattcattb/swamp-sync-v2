@@ -1,10 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {Button} from "../components/ui/button";
 import {Card, CardContent, CardHeader, CardTitle} from "../components/ui/card";
 import {Input} from "../components/ui/input";
 import {Label} from "../components/ui/label";
-import { signIn } from "../lib/auth";
+import { signIn, useSession } from "../lib/auth";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const {data: session, isPending} = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -34,6 +35,10 @@ function LoginPage() {
       navigate({to: "/dashboard", replace: true});
     }
   };
+
+  if (!isPending && session) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="mx-auto mt-10 w-full max-w-md px-4">

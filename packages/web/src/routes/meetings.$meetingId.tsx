@@ -3,14 +3,19 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import {createFileRoute, Link, Navigate} from "@tanstack/react-router";
-import {parseResponse, type InferResponseType} from "hono/client";
-import {Fragment, type FormEvent, useState} from "react";
+import {createFileRoute, Link} from "@tanstack/react-router";
+import {
+  parseResponse,
+  type InferRequestType,
+  type InferResponseType,
+} from "hono/client";
+import {Fragment, type FormEvent, useEffect, useState} from "react";
 import {Badge} from "../components/ui/badge";
 import {Button} from "../components/ui/button";
 import {Card, CardContent} from "../components/ui/card";
 import {EmptyState} from "../components/ui/empty";
 import {Input} from "../components/ui/input";
+import {Label} from "../components/ui/label";
 import {Progress} from "../components/ui/progress";
 import {Sheet} from "../components/ui/sheet";
 import {Tabs} from "../components/ui/tabs";
@@ -23,13 +28,21 @@ export const Route = createFileRoute("/meetings/$meetingId")({
 
 const meetingsApi = rpcClient.api.meetings;
 const meetingDetailApi = meetingsApi[":id"];
-const meetingAvailabilityApi = meetingDetailApi.availability;
+const publicMeetingsApi = rpcClient.api.public.meetings;
+const publicMeetingDetailApi = publicMeetingsApi[":id"];
+const publicMeetingAvailabilityApi = publicMeetingDetailApi.availability;
 
 const meetingKey = (id: string) => ["meeting", id] as const;
+const publicMeetingKey = (id: string) => ["public-meeting", id] as const;
 const suggestionsKey = (id: string) => ["meeting-suggestions", id] as const;
 const availabilityKey = (id: string) => ["meeting-availability", id] as const;
 
-type MeetingAvailability = InferResponseType<typeof meetingAvailabilityApi.$get>;
+type MeetingAvailability = InferResponseType<
+  typeof publicMeetingAvailabilityApi.$get
+>;
+type SaveAvailabilityInput = InferRequestType<
+  typeof publicMeetingAvailabilityApi.$put
+>["json"];
 
 const timeFromMinutes = (value: number) => {
   const hours = Math.floor(value / 60).toString().padStart(2, "0");
@@ -70,12 +83,24 @@ function MeetingPage() {
   const {meetingId} = Route.useParams();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
+  const [guestName, setGuestName] = useState("");
   const [tab, setTab] = useState("availability");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const meetingQuery = useQuery({
+  const publicMeetingQuery = useQuery({
+    queryKey: publicMeetingKey(meetingId),
+    queryFn: () =>
+      parseResponse(
+        publicMeetingDetailApi.$get({
+          param: {id: meetingId},
+        }),
+      ),
+  });
+
+  const protectedMeetingQuery = useQuery({
     queryKey: meetingKey(meetingId),
+    enabled: Boolean(session),
     queryFn: () =>
       parseResponse(
         meetingDetailApi.$get({
@@ -86,6 +111,7 @@ function MeetingPage() {
 
   const suggestionsQuery = useQuery({
     queryKey: suggestionsKey(meetingId),
+    enabled: Boolean(session),
     queryFn: () =>
       parseResponse(
         meetingDetailApi.suggestions.$get({
@@ -98,17 +124,18 @@ function MeetingPage() {
     queryKey: availabilityKey(meetingId),
     queryFn: () =>
       parseResponse(
-        meetingAvailabilityApi.$get({
+        publicMeetingAvailabilityApi.$get({
           param: {id: meetingId},
         }),
       ),
   });
 
-  const meeting =
-    meetingQuery.data &&
-    Array.isArray(meetingQuery.data.members) &&
-    Array.isArray(meetingQuery.data.invites)
-      ? meetingQuery.data
+  const meeting = publicMeetingQuery.data;
+  const protectedMeeting =
+    protectedMeetingQuery.data &&
+    Array.isArray(protectedMeetingQuery.data.members) &&
+    Array.isArray(protectedMeetingQuery.data.invites)
+      ? protectedMeetingQuery.data
       : undefined;
   const suggestions = Array.isArray(suggestionsQuery.data)
     ? suggestionsQuery.data
@@ -126,16 +153,42 @@ function MeetingPage() {
       setEmail("");
       setInviteOpen(false);
       queryClient.setQueryData(meetingKey(meetingId), updated);
+      queryClient.invalidateQueries({queryKey: publicMeetingKey(meetingId)});
       queryClient.invalidateQueries({queryKey: ["meetings"]});
       queryClient.invalidateQueries({queryKey: suggestionsKey(meetingId)});
     },
   });
 
-  if (!isPending && !session) {
-    return <Navigate to="/login" replace />;
-  }
+  const guestJoinMutation = useMutation({
+    mutationFn: () =>
+      parseResponse(
+        publicMeetingDetailApi.guest.$post({
+          param: {id: meetingId},
+          json: {displayName: guestName.trim()},
+        }),
+      ),
+    onSuccess: () => {
+      setGuestName("");
+      queryClient.invalidateQueries({queryKey: publicMeetingKey(meetingId)});
+      queryClient.invalidateQueries({queryKey: availabilityKey(meetingId)});
+    },
+  });
 
-  if (meetingQuery.isLoading) {
+  const saveAvailabilityMutation = useMutation({
+    mutationFn: (json: SaveAvailabilityInput) =>
+      parseResponse(
+        publicMeetingAvailabilityApi.$put({
+          param: {id: meetingId},
+          json,
+        }),
+      ),
+    onSuccess: (availability) => {
+      queryClient.setQueryData(availabilityKey(meetingId), availability);
+      queryClient.invalidateQueries({queryKey: suggestionsKey(meetingId)});
+    },
+  });
+
+  if (publicMeetingQuery.isLoading || isPending) {
     return (
       <Card className="border-primary/15">
         <CardContent className="p-5 text-sm text-muted-foreground">
@@ -150,8 +203,8 @@ function MeetingPage() {
       <Card className="border-primary/15">
         <CardContent className="space-y-3 p-5">
           <p className="text-sm text-muted-foreground">
-            {meetingQuery.error
-              ? getRpcErrorMessage(meetingQuery.error, "This meeting could not be loaded")
+            {publicMeetingQuery.error
+              ? getRpcErrorMessage(publicMeetingQuery.error, "This meeting could not be loaded")
               : "This meeting could not be loaded."}
           </p>
           <Button asChild variant="outline">
@@ -162,14 +215,16 @@ function MeetingPage() {
     );
   }
 
-  const members = meeting.members ?? [];
-  const invites = meeting.invites ?? [];
+  const invites = protectedMeeting?.invites ?? [];
+  const participants = meeting.participants ?? [];
   const joinUrl = `${window.location.origin}/meetings/${meeting.id}`;
   const pendingInvites = invites.filter((invite) => invite.status === "pending");
-  const acceptedCount = members.length;
-  const totalPeople = members.length + pendingInvites.length;
+  const acceptedCount = participants.length;
+  const totalPeople = participants.length + pendingInvites.length;
   const participation =
     totalPeople === 0 ? 100 : Math.round((acceptedCount / totalPeople) * 100);
+  const currentParticipantId =
+    availabilityQuery.data?.currentParticipantId ?? meeting.currentParticipantId;
 
   const handleInvite = (e: FormEvent) => {
     e.preventDefault();
@@ -220,9 +275,11 @@ function MeetingPage() {
                 <Button type="button" size="sm" variant="outline" onClick={copyJoinUrl}>
                   {copied ? "Copied" : "Copy link"}
                 </Button>
-                <Button type="button" size="sm" onClick={() => setInviteOpen(true)}>
-                  Invite
-                </Button>
+                {session ? (
+                  <Button type="button" size="sm" onClick={() => setInviteOpen(true)}>
+                    Invite
+                  </Button>
+                ) : null}
               </div>
               <div className="rounded-lg border border-border bg-surface-elevated p-3">
               <div className="mb-2 flex items-center justify-between text-sm">
@@ -231,11 +288,44 @@ function MeetingPage() {
               </div>
               <Progress value={participation} />
               <p className="mt-2 text-xs text-muted-foreground">
-                {acceptedCount} accepted, {pendingInvites.length} pending
+                {acceptedCount} joined, {pendingInvites.length} pending
               </p>
               </div>
             </div>
           </div>
+
+          {!currentParticipantId ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!guestName.trim()) return;
+                guestJoinMutation.mutate();
+              }}
+              className="grid gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:grid-cols-[1fr_auto]"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="guest-name">Join as guest</Label>
+                <Input
+                  id="guest-name"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="Your name"
+                />
+                {guestJoinMutation.error ? (
+                  <p className="text-sm text-danger">
+                    {getRpcErrorMessage(guestJoinMutation.error, "Could not join meeting")}
+                  </p>
+                ) : null}
+              </div>
+              <Button
+                type="submit"
+                className="self-end"
+                disabled={guestJoinMutation.isPending || !guestName.trim()}
+              >
+                Join meeting
+              </Button>
+            </form>
+          ) : null}
 
           <Tabs
             value={tab}
@@ -253,6 +343,10 @@ function MeetingPage() {
               availability={availabilityQuery.data}
               isLoading={availabilityQuery.isLoading}
               error={availabilityQuery.error}
+              canEdit={Boolean(currentParticipantId)}
+              isSaving={saveAvailabilityMutation.isPending}
+              saveError={saveAvailabilityMutation.error}
+              onSave={(slots) => saveAvailabilityMutation.mutate({slots})}
             />
           ) : null}
 
@@ -289,16 +383,24 @@ function MeetingPage() {
           {tab === "people" ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <h3 className="font-medium">Members</h3>
-                {members.map((member) => (
+                <h3 className="font-medium">Participants</h3>
+                {participants.map((participant) => (
                   <div
-                    key={member.userId}
+                    key={participant.id}
                     className="flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 text-sm"
                   >
-                    <span>{member.name}</span>
-                    <Badge variant="success">{member.role}</Badge>
+                    <span>{participant.displayName}</span>
+                    <Badge variant={participant.kind === "guest" ? "neutral" : "success"}>
+                      {participant.kind}
+                    </Badge>
                   </div>
                 ))}
+                {participants.length === 0 ? (
+                  <EmptyState
+                    title="No participants yet"
+                    description="Share the meeting link so people can join and mark availability."
+                  />
+                ) : null}
               </div>
               <div className="space-y-2">
                 <h3 className="font-medium">Invites</h3>
@@ -318,7 +420,11 @@ function MeetingPage() {
                 {invites.length === 0 ? (
                   <EmptyState
                     title="No invites sent"
-                    description="Invite registered users from the side panel when you are ready."
+                    description={
+                      session
+                        ? "Invite registered users from the side panel when you are ready."
+                        : "Sign in to use registered-user invites."
+                    }
                   />
                 ) : null}
               </div>
@@ -364,11 +470,41 @@ function AvailabilityGrid({
   availability,
   isLoading,
   error,
+  canEdit,
+  isSaving,
+  saveError,
+  onSave,
 }: {
   availability: MeetingAvailability | undefined;
   isLoading: boolean;
   error: unknown;
+  canEdit: boolean;
+  isSaving: boolean;
+  saveError: unknown;
+  onSave: (slots: SaveAvailabilityInput["slots"]) => void;
 }) {
+  const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
+  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
+  const [paintMode, setPaintMode] = useState<"add" | "remove" | null>(null);
+
+  useEffect(() => {
+    if (!availability) return;
+    setSelectedSlots(
+      new Set(
+        availability.currentParticipantAvailability.map(
+          (slot) => `${slot.startAt}|${slot.endAt}`,
+        ),
+      ),
+    );
+  }, [availability?.currentParticipantId]);
+
+  useEffect(() => {
+    if (!paintMode) return;
+    const stopPainting = () => setPaintMode(null);
+    window.addEventListener("mouseup", stopPainting);
+    return () => window.removeEventListener("mouseup", stopPainting);
+  }, [paintMode]);
+
   if (isLoading) {
     return (
       <div className="rounded-lg border border-border bg-surface-elevated p-4 text-sm text-muted-foreground">
@@ -397,6 +533,44 @@ function AvailabilityGrid({
       day.slots.map((slot) => slot.availableCount),
     ),
   );
+  const selectedSlot =
+    availability.days
+      .flatMap((day) => day.slots)
+      .find((slot) => `${slot.startAt}|${slot.endAt}` === selectedSlotKey) ??
+    availability.days[0]?.slots[0];
+  const dirty =
+    selectedSlots.size !== availability.currentParticipantAvailability.length ||
+    availability.currentParticipantAvailability.some(
+      (slot) => !selectedSlots.has(`${slot.startAt}|${slot.endAt}`),
+    );
+
+  const paintSlot = (
+    slot: {startAt: string; endAt: string},
+    mode: "add" | "remove",
+  ) => {
+    setSelectedSlotKey(`${slot.startAt}|${slot.endAt}`);
+    if (!canEdit) return;
+
+    setSelectedSlots((current) => {
+      const next = new Set(current);
+      const key = `${slot.startAt}|${slot.endAt}`;
+      if (mode === "add") {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  const saveSlots = () => {
+    onSave(
+      [...selectedSlots].map((key) => {
+        const [startAt, endAt] = key.split("|");
+        return {startAt, endAt};
+      }),
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -407,11 +581,33 @@ function AvailabilityGrid({
           </h3>
           <p className="text-sm text-muted-foreground">
             Darker blocks mean more people are free. Small dots show which
-            members are available in that slot.
+            participants are available in that slot. Click and drag to paint
+            your free times.
           </p>
         </div>
-        <Badge variant="neutral">{availability.stepMinutes} min blocks</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {dirty ? <Badge variant="warning">Unsaved changes</Badge> : null}
+          <Badge variant="neutral">{availability.stepMinutes} min blocks</Badge>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canEdit || !dirty || isSaving}
+            onClick={saveSlots}
+          >
+            {isSaving ? "Saving" : "Save availability"}
+          </Button>
+        </div>
       </div>
+      {!canEdit ? (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+          Join as a guest or sign in before marking your own availability.
+        </div>
+      ) : null}
+      {saveError ? (
+        <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+          {getRpcErrorMessage(saveError, "Could not save availability")}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {availability.members.map((member, index) => (
@@ -429,98 +625,180 @@ function AvailabilityGrid({
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-white">
-        <div
-          className="min-w-[860px] grid"
-          style={{
-            gridTemplateColumns: `84px repeat(${availability.days.length}, minmax(116px, 1fr))`,
-          }}
-        >
-          <div className="sticky left-0 z-10 border-b border-r border-border bg-surface-elevated p-2 text-xs font-bold text-muted-foreground">
-            Time
-          </div>
-          {availability.days.map((day) => (
-            <div
-              key={day.date}
-              className="border-b border-r border-border bg-surface-elevated p-2 text-center text-sm font-extrabold text-primary last:border-r-0"
-            >
-              {formatDay(day.date)}
+      <div className="grid gap-3 lg:grid-cols-[1fr_280px]">
+        <div className="overflow-x-auto rounded-lg border border-border bg-white">
+          <div
+            className="min-w-[860px] grid select-none"
+            style={{
+              gridTemplateColumns: `84px repeat(${availability.days.length}, minmax(116px, 1fr))`,
+            }}
+          >
+            <div className="sticky left-0 z-10 border-b border-r border-border bg-surface-elevated p-2 text-xs font-bold text-muted-foreground">
+              Time
             </div>
-          ))}
-
-          {timeRows.map((rowSlot, rowIndex) => (
-            <Fragment key={rowSlot.startAt}>
+            {availability.days.map((day) => (
               <div
-                key={`${rowSlot.startAt}-label`}
-                className="sticky left-0 z-10 border-b border-r border-border bg-white p-2 text-xs font-semibold text-muted-foreground"
+                key={day.date}
+                className="border-b border-r border-border bg-surface-elevated p-2 text-center text-sm font-extrabold text-primary last:border-r-0"
               >
-                {formatTime(rowSlot.startAt)}
+                {formatDay(day.date)}
               </div>
-              {availability.days.map((day) => {
-                const slot = day.slots[rowIndex];
-                if (!slot) {
+            ))}
+
+            {timeRows.map((rowSlot, rowIndex) => (
+              <Fragment key={rowSlot.startAt}>
+                <div
+                  key={`${rowSlot.startAt}-label`}
+                  className="sticky left-0 z-10 border-b border-r border-border bg-white p-2 text-xs font-semibold text-muted-foreground"
+                >
+                  {formatTime(rowSlot.startAt)}
+                </div>
+                {availability.days.map((day) => {
+                  const slot = day.slots[rowIndex];
+                  if (!slot) {
+                    return (
+                      <div
+                        key={`${day.date}-${rowSlot.startAt}-empty`}
+                        className="border-b border-r border-border bg-muted/40"
+                      />
+                    );
+                  }
+
+                  const slotKey = `${slot.startAt}|${slot.endAt}`;
+                  const isMine = selectedSlots.has(slotKey);
+                  const isSelected = selectedSlotKey === slotKey;
+                  const intensity = slot.availableCount / maxAvailable;
+                  const lightness = 94 - intensity * 46;
+                  const availableNames = slot.availableMembers
+                    .map((member) => member.name)
+                    .join(", ");
+                  const busyNames = slot.busyMembers
+                    .map((member) => member.name)
+                    .join(", ");
+
                   return (
-                    <div
-                      key={`${day.date}-${rowSlot.startAt}-empty`}
-                      className="border-b border-r border-border bg-muted/40"
-                    />
-                  );
-                }
-
-                const intensity = slot.availableCount / maxAvailable;
-                const lightness = 94 - intensity * 46;
-                const availableNames = slot.availableMembers
-                  .map((member) => member.name)
-                  .join(", ");
-                const busyNames = slot.busyMembers
-                  .map((member) => member.name)
-                  .join(", ");
-
-                return (
-                  <div
-                    key={`${day.date}-${slot.startAt}`}
-                    title={`Free: ${availableNames || "Nobody"}${
-                      busyNames ? ` | Busy: ${busyNames}` : ""
-                    }`}
-                    className="min-h-12 border-b border-r border-border p-1.5 text-xs transition hover:ring-2 hover:ring-primary/30"
-                    style={{
-                      background:
-                        slot.availableCount === 0
-                          ? "hsl(var(--muted))"
-                          : `hsl(145 52% ${lightness}%)`,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-extrabold text-foreground">
-                        {slot.availableCount}/{slot.totalCount}
-                      </span>
-                      {slot.availableCount === slot.totalCount ? (
-                        <span className="rounded-full bg-success/20 px-1.5 py-0.5 text-[10px] font-bold text-success">
-                          all
+                    <button
+                      key={`${day.date}-${slot.startAt}`}
+                      type="button"
+                      title={`Free: ${availableNames || "Nobody"}${
+                        busyNames ? ` | Busy: ${busyNames}` : ""
+                      }`}
+                      onMouseDown={() => {
+                        const mode = isMine ? "remove" : "add";
+                        setPaintMode(mode);
+                        paintSlot(slot, mode);
+                      }}
+                      onMouseEnter={() => {
+                        if (paintMode) {
+                          paintSlot(slot, paintMode);
+                        }
+                      }}
+                      onClick={() => setSelectedSlotKey(slotKey)}
+                      className={`min-h-12 border-b border-r border-border p-1.5 text-left text-xs transition hover:ring-2 hover:ring-primary/30 ${
+                        isSelected ? "ring-2 ring-primary" : ""
+                      } ${isMine ? "shadow-[inset_0_0_0_2px_hsl(var(--primary))]" : ""}`}
+                      style={{
+                        background: isMine
+                          ? "hsl(var(--primary) / 0.16)"
+                          : slot.availableCount === 0
+                            ? "hsl(var(--muted))"
+                            : `hsl(145 52% ${lightness}%)`,
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-extrabold text-foreground">
+                          {slot.availableCount}/{slot.totalCount}
                         </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {slot.availableMembers.slice(0, 6).map((member) => {
-                        const memberIndex = availability.members.findIndex(
-                          (item) => item.userId === member.userId,
-                        );
-                        return (
-                          <span
-                            key={member.userId}
-                            className={`h-2 w-2 rounded-full ${
-                              memberColors[memberIndex % memberColors.length]
-                            }`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </Fragment>
-          ))}
+                        {isMine ? (
+                          <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                            me
+                          </span>
+                        ) : slot.availableCount === slot.totalCount ? (
+                          <span className="rounded-full bg-success/20 px-1.5 py-0.5 text-[10px] font-bold text-success">
+                            all
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {slot.availableMembers.slice(0, 6).map((member) => {
+                          const memberIndex = availability.members.findIndex(
+                            (item) => item.userId === member.userId,
+                          );
+                          return (
+                            <span
+                              key={member.userId}
+                              className={`h-2 w-2 rounded-full ${
+                                memberColors[memberIndex % memberColors.length]
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </button>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
         </div>
+
+        <div className="rounded-lg border border-border bg-surface-elevated p-3">
+          <h3 className="font-extrabold text-primary">Selected time</h3>
+          {selectedSlot ? (
+            <div className="mt-2 space-y-3">
+              <div className="text-sm font-semibold">
+                {formatDateTime(selectedSlot.startAt)} -{" "}
+                {formatTime(selectedSlot.endAt)}
+              </div>
+              <ParticipantList
+                title="Free"
+                members={selectedSlot.availableMembers}
+              />
+              <ParticipantList
+                title="Calendar busy"
+                members={selectedSlot.busyMembers}
+              />
+              <ParticipantList
+                title="Not available"
+                members={selectedSlot.notAvailableMembers}
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Select a cell to inspect responses.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParticipantList({
+  title,
+  members,
+}: {
+  title: string;
+  members: Array<{userId: string; name: string; email?: string | null}>;
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-xs font-bold uppercase text-muted-foreground">
+        {title}
+      </div>
+      <div className="space-y-1">
+        {members.length === 0 ? (
+          <div className="text-xs text-muted-foreground">None</div>
+        ) : (
+          members.map((member) => (
+            <div
+              key={member.userId}
+              className="rounded-md bg-white px-2 py-1 text-sm font-medium"
+            >
+              {member.name}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
