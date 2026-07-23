@@ -3,10 +3,17 @@
   "build": {
     "builder": "RAILPACK",
     "buildCommand": "bun run --filter=@swamp-sync-v2/web build",
-    "watchPatterns": ["/packages/web/**", "/package.json", "/bun.lock"]
+    "watchPatterns": [
+      "/packages/web/**",
+      "/package.json",
+      "/bun.lock",
+      "/railway.web.json"
+    ]
   },
   "deploy": {
-    "startCommand": "bun run --filter=@swamp-sync-v2/web start -- --host 0.0.0.0 --port $PORT",
+    "startCommand": "bun run --filter=@swamp-sync-v2/web preview -- --host 0.0.0.0 --port $PORT",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 30,
     "sleepApplication": true,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
